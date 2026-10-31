@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RailDefect Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --saffron: #FF9933; --india-green: #138808; --navy: #0A1A5C;
+    --bg: #f6f5f2; --card-bg: #ffffff; --text: #16181d; --muted: #666a73;
+    --border: #e6e3dc; --good: #138808; --bad: #c62828; --warn: #b36b00;
+    --accent: #0A1A5C;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1115; --card-bg: #181b22; --text: #ecebe6; --muted: #a2a6ae;
+      --border: #2a2e37; --good: #4ade80; --bad: #f87171; --warn: #fbbf24;
+      --accent: #7fa0ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1115; --card-bg: #181b22; --text: #ecebe6; --muted: #a2a6ae;
+    --border: #2a2e37; --good: #4ade80; --bad: #f87171; --warn: #fbbf24;
+    --accent: #7fa0ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .tricolor-bar { height: 6px; display: flex; }
+  .tricolor-bar span { flex: 1; }
+  .tricolor-bar .s1 { background: var(--saffron); }
+  .tricolor-bar .s2 { background: #ffffff; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; }
+  .tricolor-bar .s3 { background: var(--india-green); }
+  .wrap { padding: 18px 20px 40px; max-width: 1200px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
+  .chakra { width: 36px; height: 36px; flex-shrink: 0; }
+  h1 { font-size: 1.5rem; margin: 0; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin: 2px 0 20px 50px; }
+  .status { padding: 12px 16px; border-radius: 8px; background: var(--card-bg); border: 1px solid var(--border); margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-top: 3px solid var(--saffron); border-radius: 10px; padding: 14px 16px; }
+  .card .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .card .value { font-size: 1.6rem; font-weight: 700; margin-top: 4px; color: var(--navy); }
+  :root[data-theme="dark"] .card .value, @media (prefers-color-scheme: dark) { }
+  .card .sub { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+  .good { color: var(--good) !important; } .bad { color: var(--bad) !important; } .warn { color: var(--warn) !important; }
+  section { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  section h2 { font-size: 1.05rem; margin: 0 0 12px; color: var(--navy); border-left: 4px solid var(--india-green); padding-left: 10px; }
+  @media (prefers-color-scheme: dark) { section h2 { color: var(--accent); } }
+  :root[data-theme="dark"] section h2 { color: var(--accent); }
+  .chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .chart-box { position: relative; height: 280px; }
+  img.full { max-width: 100%; border-radius: 6px; display: block; margin: 0 auto; }
+  input[type="search"], input[type="text"] { width: 100%; padding: 8px 10px; margin-bottom: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { cursor: pointer; user-select: none; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card-bg); }
+  th:hover { color: var(--text); }
+  tr { cursor: pointer; }
+  tr:hover { background: color-mix(in srgb, var(--india-green) 8%, transparent); }
+  .table-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+
+  /* modal for severity inspection */
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--card-bg); border-radius: 12px; max-width: 760px; width: 100%; max-height: 90vh; overflow: auto; padding: 20px; border-top: 4px solid var(--saffron); }
+  .modal h3 { margin-top: 0; color: var(--navy); }
+  :root[data-theme="dark"] .modal h3 { color: var(--accent); }
+  .modal-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .modal-imgs img { width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+  .modal-imgs .cap { font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 4px; }
+  .modal-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .modal-stats .mcard { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .modal-stats .mcard .l { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+  .modal-stats .mcard .v { font-size: 1.05rem; font-weight: 600; }
+  .close-btn { float: right; background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--muted); }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20px 0 6px; }
+</style>
+</head>
+<body>
+  <div class="tricolor-bar"><span class="s1"></span><span class="s2"></span><span class="s3"></span></div>
+  <div class="wrap">
+    <header>
+      <svg class="chakra" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="46" fill="none" stroke="#0A1A5C" stroke-width="4"/>
+        <circle cx="50" cy="50" r="4" fill="#0A1A5C"/>
+        <g id="chakra-spokes"></g>
+      </svg>
+      <h1>RailDefect Classifier — Dashboard</h1>
+    </header>
+    <div class="subtitle">Explainable, calibrated railway track defect screening — all local, nothing leaves your machine.</div>
+
+    <div id="status" class="status">Loading <code>data/metrics.json</code>…</div>
+
+    <div id="content" style="display:none;">
+      <div class="grid" id="summary-cards"></div>
+
+      <section>
+        <h2>Dataset composition</h2>
+        <div class="chart-row">
+          <div class="chart-box"><canvas id="chart-dataset-stats"></canvas></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Training curves</h2>
+        <div class="chart-row">
+          <div class="chart-box"><canvas id="chart-loss"></canvas></div>
+          <div class="chart-box"><canvas id="chart-acc"></canvas></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Confusion matrix &amp; ROC curve</h2>
+        <div class="chart-row">
+          <div class="chart-box"><canvas id="chart-cm"></canvas></div>
+          <div class="chart-box"><canvas id="chart-roc"></canvas></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Calibration — reliability diagram</h2>
+        <div class="chart-row">
+          <div class="chart-box"><canvas id="chart-reliability-raw"></canvas></div>
+          <div class="chart-box"><canvas id="chart-reliability-cal"></canvas></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Monte Carlo Dropout uncertainty</h2>
+        <div class="chart-box"><canvas id="chart-mcdropout"></canvas></div>
+      </section>
+
+      <section id="sec-uncertainty-decomp" style="display:none;">
+        <h2>Aleatoric vs. epistemic uncertainty</h2>
+        <img class="full" id="img-uncertainty-decomp" alt="Aleatoric vs epistemic uncertainty decomposition" />
+      </section>
+
+      <section id="sec-ood" style="display:none;">
+        <h2>Out-of-distribution signal (Mahalanobis distance)</h2>
+        <img class="full" id="img-ood" alt="OOD Mahalanobis distance" />
+      </section>
+
+      <section>
+        <h2>Selective prediction — coverage vs. accuracy</h2>
+        <div class="chart-box"><canvas id="chart-selective"></canvas></div>
+      </section>
+
+      <section>
+        <h2>Grad-CAM examples</h2>
+        <img class="full" id="img-gradcam" alt="Grad-CAM examples" />
+      </section>
+
+      <section>
+        <h2>Severity / priority distributions</h2>
+        <img class="full" id="img-severity" alt="Severity and priority distributions" />
+      </section>
+
+      <section>
+        <h2>Grad-CAM sanity check</h2>
+        <img class="full" id="img-sanity" alt="Grad-CAM sanity check" />
+      </section>
+
+      <section>
+        <h2>Severity inspection — ranked test images</h2>
+        <div class="subtitle" style="margin:0 0 10px;">Click any row to view the original image alongside its Grad-CAM overlay and full trust signals.</div>
+        <input type="search" id="table-search" placeholder="Filter by prediction, file name…" />
+        <div class="table-wrap">
+          <table id="priority-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <footer>RailDefect Classifier — local dashboard</footer>
+  </div>
+
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal">
+      <button class="close-btn" id="modal-close">×</button>
+      <h3 id="modal-title">Image detail</h3>
+      <div class="modal-imgs">
+        <div><img id="modal-img-orig" /><div class="cap">original</div></div>
+        <div><img id="modal-img-cam" /><div class="cap">Grad-CAM overlay</div></div>
+      </div>
+      <div class="modal-stats" id="modal-stats"></div>
+    </div>
+  </div>
+
+<script>
+const CHART_COLORS = { saffron: '#FF9933', green: '#138808', navy: '#0A1A5C', accent: '#0A1A5C', good: '#138808', bad: '#c62828', warn: '#b36b00', muted: '#9aa0a6' };
+
+// draw the 24 Ashoka Chakra spokes
+(function drawChakra() {
+  const g = document.getElementById('chakra-spokes');
+  const cx = 50, cy = 50, rOuter = 42, rInner = 6;
+  for (let i = 0; i < 24; i++) {
+    const angle = (i * 15) * Math.PI / 180;
+    const x2 = cx + rOuter * Math.sin(angle), y2 = cy - rOuter * Math.cos(angle);
+    const x1 = cx + rInner * Math.sin(angle), y1 = cy - rInner * Math.cos(angle);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke', '#0A1A5C'); line.setAttribute('stroke-width', '2');
+    g.appendChild(line);
+  }
+})();
+
+function fmtPct(x) { return (x * 100).toFixed(1) + '%'; }
+
+let METRICS = null;
+
+async function main() {
+  const statusEl = document.getElementById('status');
+  try {
+    const res = await fetch('data/metrics.json');
+    if (!res.ok) throw new Error('metrics.json not found (' + res.status + ')');
+    METRICS = await res.json();
+  } catch (e) {
+    statusEl.innerHTML = 'Could not load <code>data/metrics.json</code>. Extract the exported zip from Colab into <code>dashboard/data/</code> (so this page sits next to a <code>data/</code> folder containing metrics.json, priority_ranked_results.csv, test_images/, gradcam_overlays/, and visualizations/), then reload. Details: ' + e.message;
+    return;
+  }
+  statusEl.style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+
+  renderSummary(METRICS);
+  renderDatasetStats(METRICS);
+  renderTrainingCurves(METRICS);
+  renderConfusionAndRoc(METRICS);
+  renderReliability(METRICS);
+  renderMcDropout(METRICS);
+  renderOptionalImages(METRICS);
+  renderSelective(METRICS);
+  renderImages();
+  renderPriorityTable();
+  setupModal();
+}
+
+function renderSummary(m) {
+  const cards = [
+    { label: 'Test accuracy', value: fmtPct(m.test_accuracy), cls: m.test_accuracy >= 0.8 ? 'good' : (m.test_accuracy >= 0.65 ? 'warn' : 'bad') },
+    { label: 'ROC-AUC', value: m.roc_auc.toFixed(3) },
+    { label: 'ECE before cal.', value: m.ece_before_calibration.toFixed(4) },
+    { label: 'ECE after cal.', value: m.ece_after_calibration.toFixed(4), sub: 'lower is better' },
+    { label: 'Selective coverage', value: fmtPct(m.selective_prediction.coverage), sub: 'threshold ' + m.selective_prediction.reject_threshold },
+    { label: 'Acc. on accepted', value: fmtPct(m.selective_prediction.accuracy_accepted) },
+    { label: 'Train / Val / Test', value: `${m.n_train} / ${m.n_val} / ${m.n_test}` },
+  ];
+  const el = document.getElementById('summary-cards');
+  el.innerHTML = cards.map(c => `
+    <div class="card">
+      <div class="label">${c.label}</div>
+      <div class="value ${c.cls || ''}">${c.value}</div>
+      ${c.sub ? `<div class="sub">${c.sub}</div>` : ''}
+    </div>`).join('');
+}
+
+function renderDatasetStats(m) {
+  if (!m.dataset_stats) return;
+  const splits = ['train', 'val', 'test'];
+  const defective = splits.map(s => m.dataset_stats[s] ? m.dataset_stats[s].defective : 0);
+  const nonDefective = splits.map(s => m.dataset_stats[s] ? m.dataset_stats[s].non_defective : 0);
+  new Chart(document.getElementById('chart-dataset-stats'), {
+    type: 'bar',
+    data: { labels: splits.map(s => s.toUpperCase()), datasets: [
+      { label: 'Defective', data: defective, backgroundColor: CHART_COLORS.saffron },
+      { label: 'Non-defective', data: nonDefective, backgroundColor: CHART_COLORS.green },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Images per split, by class' } },
+      scales: { x: { stacked: true }, y: { stacked: true } } }
+  });
+}
+
+function renderTrainingCurves(m) {
+  const h = m.training_history;
+  const epochs = h.train_loss.map((_, i) => i + 1);
+  new Chart(document.getElementById('chart-loss'), {
+    type: 'line',
+    data: { labels: epochs, datasets: [
+      { label: 'train loss', data: h.train_loss, borderColor: CHART_COLORS.navy, tension: 0.2 },
+      { label: 'val loss', data: h.val_loss, borderColor: CHART_COLORS.bad, tension: 0.2 },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Loss' } } }
+  });
+  new Chart(document.getElementById('chart-acc'), {
+    type: 'line',
+    data: { labels: epochs, datasets: [
+      { label: 'train acc', data: h.train_acc, borderColor: CHART_COLORS.navy, tension: 0.2 },
+      { label: 'val acc', data: h.val_acc, borderColor: CHART_COLORS.green, tension: 0.2 },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Accuracy' } } }
+  });
+}
+
+function renderConfusionAndRoc(m) {
+  const cm = m.confusion_matrix;
+  new Chart(document.getElementById('chart-cm'), {
+    type: 'bar',
+    data: {
+      labels: ['TN (correct OK)', 'FP (false alarm)', 'FN (missed defect)', 'TP (correct defect)'],
+      datasets: [{ label: 'count', data: [cm[0][0], cm[0][1], cm[1][0], cm[1][1]],
+        backgroundColor: [CHART_COLORS.green, CHART_COLORS.warn, CHART_COLORS.bad, CHART_COLORS.saffron] }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Confusion matrix' }, legend: { display: false } } }
+  });
+  new Chart(document.getElementById('chart-roc'), {
+    type: 'line',
+    data: { labels: m.roc_curve.fpr.map(v => v.toFixed(2)), datasets: [
+      { label: `ROC (AUC=${m.roc_auc.toFixed(3)})`, data: m.roc_curve.tpr, borderColor: CHART_COLORS.navy, pointRadius: 0 },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'ROC curve' } },
+      scales: { x: { title: { display: true, text: 'False Positive Rate' } }, y: { title: { display: true, text: 'True Positive Rate' } } } }
+  });
+}
+
+function renderReliability(m) {
+  const rd = m.reliability_diagram;
+  function plot(id, data, title) {
+    const xs = data.confidence, ys = data.accuracy;
+    new Chart(document.getElementById(id), {
+      type: 'bar',
+      data: { labels: xs.map(v => v === null ? '' : v.toFixed(2)), datasets: [
+        { label: 'observed accuracy', data: ys, backgroundColor: CHART_COLORS.saffron },
+      ]},
+      options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: title } },
+        scales: { x: { title: { display: true, text: 'confidence bin' } }, y: { min: 0, max: 1, title: { display: true, text: 'accuracy' } } } }
+    });
+  }
+  plot('chart-reliability-raw', rd.raw, `Before calibration (ECE=${m.ece_before_calibration.toFixed(3)})`);
+  plot('chart-reliability-cal', rd.calibrated, `After calibration (ECE=${m.ece_after_calibration.toFixed(3)})`);
+}
+
+function renderMcDropout(m) {
+  const vals = m.mc_dropout_std_values;
+  const bins = 25;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const width = (max - min) / bins || 1;
+  const counts = new Array(bins).fill(0);
+  vals.forEach(v => { let idx = Math.floor((v - min) / width); if (idx >= bins) idx = bins - 1; if (idx < 0) idx = 0; counts[idx]++; });
+  const labels = counts.map((_, i) => (min + i * width).toFixed(3));
+  new Chart(document.getElementById('chart-mcdropout'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'test images', data: counts, backgroundColor: CHART_COLORS.navy }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'MC-Dropout uncertainty (std) distribution' }, legend: { display: false } },
+      scales: { x: { title: { display: true, text: 'std of P(defective) across stochastic passes' } } } }
+  });
+}
+
+function renderOptionalImages(m) {
+  if (m.uncertainty_decomposition) {
+    document.getElementById('sec-uncertainty-decomp').style.display = '';
+    document.getElementById('img-uncertainty-decomp').src = 'data/visualizations/uncertainty_decomposition.png';
+  }
+  if (m.ood_mahalanobis) {
+    document.getElementById('sec-ood').style.display = '';
+    document.getElementById('img-ood').src = 'data/visualizations/ood_mahalanobis.png';
+  }
+}
+
+function renderSelective(m) {
+  const s = m.selective_prediction.threshold_sweep;
+  new Chart(document.getElementById('chart-selective'), {
+    type: 'line',
+    data: { labels: s.thresholds.map(t => t.toFixed(2)), datasets: [
+      { label: 'coverage', data: s.coverage, borderColor: CHART_COLORS.navy, yAxisID: 'y' },
+      { label: 'accuracy on accepted', data: s.accuracy, borderColor: CHART_COLORS.bad, yAxisID: 'y' },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Raising the threshold trades coverage for accuracy' } },
+      scales: { x: { title: { display: true, text: 'confidence threshold' } }, y: { min: 0, max: 1 } } }
+  });
+}
+
+function renderImages() {
+  document.getElementById('img-gradcam').src = 'data/visualizations/gradcam_examples.png';
+  document.getElementById('img-severity').src = 'data/visualizations/severity_priority_distributions.png';
+  document.getElementById('img-sanity').src = 'data/visualizations/gradcam_sanity_check.png';
+}
+
+let priorityRows = [];
+let sortState = { col: 'priority_score', dir: -1 };
+
+function renderPriorityTable() {
+  Papa.parse('data/priority_ranked_results.csv', {
+    download: true, header: true, dynamicTyping: true, skipEmptyLines: true,
+    complete: (res) => { priorityRows = res.data; drawTable(); },
+    error: () => { document.getElementById('priority-table').innerHTML = '<caption>Could not load priority_ranked_results.csv</caption>'; }
+  });
+  document.getElementById('table-search').addEventListener('input', drawTable);
+}
+
+function drawTable() {
+  if (!priorityRows.length) return;
+  const cols = Object.keys(priorityRows[0]);
+  const q = document.getElementById('table-search').value.toLowerCase();
+  let rows = priorityRows.filter(r => !q || Object.values(r).some(v => String(v).toLowerCase().includes(q)));
+  rows.sort((a, b) => {
+    const va = a[sortState.col], vb = b[sortState.col];
+    if (va === vb) return 0;
+    return (va > vb ? 1 : -1) * sortState.dir;
+  });
+  const thead = document.querySelector('#priority-table thead');
+  thead.innerHTML = '<tr>' + cols.map(c => `<th data-col="${c}">${c}${sortState.col === c ? (sortState.dir === 1 ? ' ▲' : ' ▼') : ''}</th>`).join('') + '</tr>';
+  thead.querySelectorAll('th').forEach(th => th.onclick = () => {
+    const col = th.dataset.col;
+    sortState.dir = (sortState.col === col) ? -sortState.dir : -1;
+    sortState.col = col;
+    drawTable();
+  });
+  const tbody = document.querySelector('#priority-table tbody');
+  tbody.innerHTML = rows.slice(0, 500).map((r, i) => {
+    const cells = cols.map(c => {
+      let v = r[c];
+      if (typeof v === 'number') v = v.toFixed(4);
+      return `<td>${v ?? ''}</td>`;
+    }).join('');
+    return `<tr data-idx="${priorityRows.indexOf(r)}">${cells}</tr>`;
+  }).join('');
+  tbody.querySelectorAll('tr').forEach(tr => tr.onclick = () => openModal(priorityRows[parseInt(tr.dataset.idx)]));
+}
+
+function setupModal() {
+  document.getElementById('modal-close').onclick = closeModal;
+  document.getElementById('modal-backdrop').onclick = (e) => { if (e.target.id === 'modal-backdrop') closeModal(); };
+}
+
+function openModal(row) {
+  document.getElementById('modal-title').textContent = row.image_file || 'Image detail';
+  document.getElementById('modal-img-orig').src = 'data/test_images/' + row.image_file;
+  document.getElementById('modal-img-cam').src = 'data/gradcam_overlays/' + (row.gradcam_file || row.image_file);
+  const stats = [
+    { l: 'True label', v: row.true === 1 ? 'Defective' : 'Non-defective' },
+    { l: 'Predicted', v: row.pred === 1 ? 'Defective' : 'Non-defective' },
+    { l: 'Calibrated P(defective)', v: (row.p_defective_calibrated ?? 0).toFixed ? row.p_defective_calibrated.toFixed(3) : row.p_defective_calibrated },
+    { l: 'Severity proxy', v: fmtNum(row.severity) },
+    { l: 'MC-Dropout std', v: fmtNum(row.mc_std) },
+    { l: 'Priority score', v: fmtNum(row.priority_score) },
+  ];
+  if (row.aleatoric !== undefined) stats.push({ l: 'Aleatoric uncertainty', v: fmtNum(row.aleatoric) });
+  if (row.epistemic !== undefined) stats.push({ l: 'Epistemic uncertainty', v: fmtNum(row.epistemic) });
+  if (row.ood_distance !== undefined) stats.push({ l: 'OOD distance', v: fmtNum(row.ood_distance) });
+  document.getElementById('modal-stats').innerHTML = stats.map(s => `
+    <div class="mcard"><div class="l">${s.l}</div><div class="v">${s.v}</div></div>`).join('');
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+function fmtNum(v) { return typeof v === 'number' ? v.toFixed(4) : (v ?? '—'); }
+function closeModal() { document.getElementById('modal-backdrop').classList.remove('open'); }
+
+main();
+</script>
+</body>
+</html>

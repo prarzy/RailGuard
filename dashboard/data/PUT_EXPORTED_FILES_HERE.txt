@@ -1,0 +1,20 @@
+Extract the contents of raildefect_export.zip (downloaded from the Colab notebook) directly into this folder.
+
+Expected contents after extracting:
+  data/best_model.pt
+  data/metrics.json
+  data/priority_ranked_results.csv
+  data/test_images/*.jpg            (real test-set photos, used by the severity inspection panel)
+  data/gradcam_overlays/*.jpg       (matching Grad-CAM overlay per test image)
+  data/visualizations/gradcam_examples.png
+  data/visualizations/severity_priority_distributions.png
+  data/visualizations/gradcam_sanity_check.png
+  data/visualizations/training_curves.png
+  data/visualizations/confusion_matrix_roc.png
+  data/visualizations/reliability_diagram.png
+  data/visualizations/mc_dropout_uncertainty_hist.png
+  data/visualizations/selective_prediction_sweep.png
+  data/visualizations/uncertainty_decomposition.png
+  data/visualizations/ood_mahalanobis.png
+
+Then delete this file (optional) and open ../index.html through a local server (see dashboard section of the main README).
